@@ -17,8 +17,9 @@ export default createBadgenHandler({
     '/github/tags/micromatch/micromatch': 'tags',
     '/github/tag/micromatch/micromatch': 'latest tag',
     '/github/contributors/micromatch/micromatch': 'contributors',
-    '/github/release/babel/babel': 'latest release',
+    '/github/release/babel/babel': 'latest release (by date)',
     '/github/release/babel/babel/stable': 'latest stable release',
+    '/github/release/babel/babel/latest': 'latest release (by Latest flag)',
     '/github/checks/nodejs/node': 'combined checks conclusion (default branch)',
     '/github/checks/nodejs/node/canary-base': 'combined checks conclusion (specified branch)',
     '/github/checks/nodejs/node/v18.0.0': 'combined checks conclusion (specified tag)',
@@ -146,6 +147,21 @@ async function release ({ owner, repo, channel }: PathArgs) {
   const stable = releases.find(release => !release.prerelease)
 
   switch (channel) {
+    case 'latest':
+      try {
+        const latestRelease = await restGithub(`repos/${owner}/${repo}/releases/latest`)
+        return {
+          subject: 'release',
+          status: version(latestRelease.name || latestRelease.tag_name),
+          color: 'blue'
+        }
+      } catch {
+        return {
+          subject: 'release',
+          status: 'none',
+          color: 'yellow'
+        }
+      }
     case 'stable':
       return {
         subject: 'release',
