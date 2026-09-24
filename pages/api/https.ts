@@ -1,5 +1,5 @@
-import got from '../../libs/got'
-import { createBadgenHandler, PathArgs } from '../../libs/create-badgen-handler'
+import { requestJson } from '../../libs/http'
+import { createBadgenHandler, PathArgs } from '../../libs/create-badgen-handler-next'
 
 const help = `
 ## Use Badgen with HTTPS Endpoint
@@ -47,6 +47,7 @@ Furthermore, you may append path args to it:
 
 export default createBadgenHandler({
   title: 'With HTTPS Endpoint',
+  sMaxAge: 21600,
   help,
   examples: {
     '/https/cal-badge-icd0onfvrxx6.runkit.sh': 'https endpoint',
@@ -60,5 +61,5 @@ export default createBadgenHandler({
 
 async function handler ({ hostname, pathname }: PathArgs) {
   const endpoint = `https://${hostname}/${pathname || ''}`
-  return await got(endpoint).json<any>()
+  return await requestJson<any>(endpoint)
 }
