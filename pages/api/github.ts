@@ -1,6 +1,6 @@
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow'
 
-import got from 'libs/got'
+import { requestJson, requestText } from 'libs/http'
 import { restGithub, queryGithub } from 'libs/github'
 import { createBadgenHandler, PathArgs, BadgenError } from 'libs/create-badgen-handler-next'
 import { coverageColor, millify, version } from 'libs/utils'
@@ -48,6 +48,7 @@ export default createBadgenHandler({
     '/github/last-commit/micromatch/micromatch/4.0.1': 'last commit (tag ref)',
     '/github/assets-dl/electron/electron': 'assets downloads for latest release',
     '/github/assets-dl/electron/electron/v7.0.0': 'assets downloads for a tag',
+    '/github/assets-dl/electron/electron/total': 'total assets downloads (recent releases)',
     '/github/dependents-repo/micromatch/micromatch': 'repository dependents',
     '/github/dependents-pkg/micromatch/micromatch': 'package dependents',
     '/github/dependabot/ubuntu/yaru': 'dependabot status',
@@ -188,11 +189,36 @@ async function contributors ({ owner, repo }: PathArgs) {
 }
 
 async function meta ({ owner, repo }: PathArgs): Promise<any> {
-  const meta = await got(`https://api.github.com/repos/${owner}/${repo}`).json()
+  const meta = await requestJson(`https://api.github.com/repos/${owner}/${repo}`)
   return meta
 }
 
 async function downloads ({ owner, repo, tag }: PathArgs) {
+  if (tag === 'total' || tag === 'all') {
+    const releases = await restGithub(`repos/${owner}/${repo}/releases`, {
+      per_page: '30'
+    })
+
+    if (!releases || !Array.isArray(releases) || !releases.length) {
+      return {
+        subject: 'downloads',
+        status: 'no releases',
+        color: 'grey'
+      }
+    }
+
+    const totalDownloads = releases.reduce((acc, release) => {
+      if (!release.assets || !release.assets.length) return acc
+      return acc + release.assets.reduce((sum: number, asset: any) => sum + (asset.download_count || 0), 0)
+    }, 0)
+
+    return {
+      subject: 'downloads',
+      status: millify(totalDownloads),
+      color: 'green'
+    }
+  }
+
   const releaseSelection = tag ? `tags/${tag}` : 'latest'
   const release = await restGithub(`repos/${owner}/${repo}/releases/${releaseSelection}`)
 
@@ -204,8 +230,7 @@ async function downloads ({ owner, repo, tag }: PathArgs) {
     }
   }
 
-   
-  const downloadCount = release.assets.reduce((result, { download_count }) => {
+  const downloadCount = release.assets.reduce((result: number, { download_count }: any) => {
     return result + download_count
   }, 0)
 
@@ -268,7 +293,7 @@ const makeRepoQuery = (topic, owner, repo, restArgs) => {
     'stars': 'stargazers { totalCount }',
     'forks': 'forks { totalCount }',
     'issues': 'issues { totalCount }',
-    'open-issues': 'issues(states:[OPEN]) { totalCount }',
+    'open-issues': 'issues(first: 1, states:[OPEN]) { totalCount }',
     'closed-issues': 'issues(states:[CLOSED]) { totalCount }',
     'prs': 'pullRequests { totalCount }',
     'open-prs': 'pullRequests(states:[OPEN]) { totalCount }',
@@ -366,17 +391,10 @@ async function repoStats ({topic, owner, repo, ...restArgs}: PathArgs) {
         color: 'blue'
       }
     case 'watchers':
-      const { watchers_count } = await meta({ owner, repo })
+      const { subscribers_count } = await meta({ owner, repo })
       return {
         subject: topic,
-        status: millify(watchers_count),
-        color: 'blue'
-      }
-    case 'open-issues':
-      const { open_issues_count } = await meta({ owner, repo })
-      return {
-        subject: topic,
-        status: millify(open_issues_count),
+        status: millify(subscribers_count),
         color: 'blue'
       }
     case 'stars':
@@ -421,12 +439,12 @@ async function repoStats ({topic, owner, repo, ...restArgs}: PathArgs) {
         status: millify(result.refs.totalCount),
         color: 'blue'
       }
-    // case 'open-issues':
-    //   return {
-    //     subject: 'open issues',
-    //     status: millify(result.issues.totalCount),
-    //     color: result.issues.totalCount === 0 ? 'green' : 'orange'
-    //   }
+    case 'open-issues':
+      return {
+        subject: 'open issues',
+        status: millify(result.issues.totalCount),
+        color: 'blue'
+      }
     case 'closed-issues':
       return {
         subject: 'closed issues',
@@ -512,7 +530,7 @@ function dependents (type: DependentsType) {
     const subject = type === 'PACKAGE' ? 'pkg dependents' : 'repo dependents'
     const keyword = type === 'PACKAGE' ? 'Packages' : 'Repositories'
 
-    const html = await got(`https://github.com/${owner}/${repo}/network/dependents`).text()
+    const html = await requestText(`https://github.com/${owner}/${repo}/network/dependents`)
     const reDependents = new RegExp(`svg>\\s*[\\d,]+\\s*${keyword}`, 'g')
     const countText = html.match(reDependents)?.[0].replace(/[^\d]/g, '')
     const count = Number(countText)

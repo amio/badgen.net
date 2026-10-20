@@ -1,9 +1,9 @@
-import ky from 'ky'
+import { request, requestJson } from './http'
 
 const rand = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)]
 
 // request gitlab api v4 (graphql)
-export function queryGitlab<T = any>(query) {
+export function queryGitlab<T = any>(query: string): Promise<T> {
   const token = pickGitlabToken()
   const headers = {
     authorization: token ? `Bearer ${token}` : undefined,
@@ -11,16 +11,17 @@ export function queryGitlab<T = any>(query) {
   const json = { query }
   const endpoint =
     process.env.GITLAB_API_GRAPHQL || 'https://gitlab.com/api/graphql'
-  return ky.post(endpoint, { json, headers }).json<T>()
+  return requestJson(endpoint, { method: 'POST', json, headers })
 }
 
-export function restGitlab<T = any>(path: string, fullResponse = false) {
+export function restGitlab(path: string): Promise<Response> {
   const token = pickGitlabToken()
   const headers = {
+    accept: 'application/json',
     authorization: token ? `Bearer ${token}` : undefined,
   }
-  const prefix = process.env.GITLAB_API || 'https://gitlab.com/api/v4'
-  return fullResponse ? ky.get(path, { prefix, headers }) : ky.get(path, { prefix, headers }).json<T>()
+  const baseUrl = process.env.GITLAB_API || 'https://gitlab.com/api/v4'
+  return request(path, { baseUrl, headers })
 }
 
 function pickGitlabToken() {

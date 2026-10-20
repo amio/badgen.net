@@ -1,16 +1,24 @@
-import got from './got'
+import { requestJson } from './http'
 import { BadgenError } from './create-badgen-handler-next'
 
+// Own registry traversal so badge handlers only interpret the selected image config.
+export async function loadDockerImageConfig(scope: string, name: string, tag?: string, architecture?: string, variant?: string) {
+  const { token } = await getDockerAuthToken(scope, name)
+  const manifest = await getManifestList(scope, name, tag || 'latest', architecture || 'amd64', variant || '', token)
+  const image = await getImageManifest(scope, name, manifest.digest, token)
+  return getImageConfig(scope, name, image.config.digest, token)
+}
+
 // request image specific DockerHub pull token
-export function getDockerAuthToken<T = any>(scope: string, name: string) {
-  const prefixUrl = process.env.DOCKER_AUTHENTICATION_API || 'https://auth.docker.io/'
+function getDockerAuthToken<T = any>(scope: string, name: string) {
+  const baseUrl = process.env.DOCKER_AUTHENTICATION_API || 'https://auth.docker.io/'
   const service = 'registry.docker.io'
   const searchParams = {
     service: service,
     scope: `repository:${scope}/${name}:pull`
   }
 
-  const resp = got.get("token", { prefixUrl, searchParams }).json<T>()
+  const resp = requestJson<T>("token", { baseUrl, searchParams })
 
   if (! resp) {
     throw new BadgenError({ status: 'unknown image' })
@@ -21,12 +29,12 @@ export function getDockerAuthToken<T = any>(scope: string, name: string) {
 
 // query the docker registry api
 function queryDockerRegistry<T = any>(path: string, headers) {
-  const prefixUrl = process.env.DOCKER_REGISTRY_API || 'https://registry.hub.docker.com/'
-  return got.get(path, { prefixUrl, headers }).json<T>()
+  const baseUrl = process.env.DOCKER_REGISTRY_API || 'https://registry.hub.docker.com/'
+  return requestJson<T>(path, { baseUrl, headers })
 }
 
 // get fat manifest list and return
-export async function getManifestList<T = any>(scope: string, name: string, tag: string, architecture: string, variant: string, token: string) {
+async function getManifestList<T = any>(scope: string, name: string, tag: string, architecture: string, variant: string, token: string) {
   const headers = {
     authorization: `Bearer ${token}`,
     accept: `application/vnd.docker.distribution.manifest.list.v2+json`
@@ -59,7 +67,7 @@ export async function getManifestList<T = any>(scope: string, name: string, tag:
   return manifest
 }
 
-export async function getImageManifest<T = any>(scope: string, name: string, digest: string, token: string) {
+async function getImageManifest<T = any>(scope: string, name: string, digest: string, token: string) {
   const headers = {
     authorization: `Bearer ${token}`,
     accept: `application/vnd.docker.distribution.manifest.list.v2+json`
@@ -74,7 +82,7 @@ export async function getImageManifest<T = any>(scope: string, name: string, dig
   return image_manifest
 }
 
-export async function getImageConfig<T = any>(scope: string, name: string, digest: string, token: string) {
+async function getImageConfig<T = any>(scope: string, name: string, digest: string, token: string) {
   const headers = {
     authorization: `Bearer ${token}`,
     accept: `application/vnd.docker.image.config+json`

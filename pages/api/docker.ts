@@ -1,6 +1,6 @@
 import millify from 'millify'
-import got from '../../libs/got'
-import { getDockerAuthToken, getManifestList, getImageManifest, getImageConfig } from '../../libs/docker'
+import { HTTPError, requestJson } from '../../libs/http'
+import { loadDockerImageConfig } from '../../libs/docker'
 import { createBadgenHandler, PathArgs } from '../../libs/create-badgen-handler-next'
 
 const help = `## Usage
@@ -54,7 +54,7 @@ async function starPullHandler ({ topic, scope, name }: PathArgs) {
 
    
   const endpoint = `https://hub.docker.com/v2/repositories/${scope}/${name}`
-  const { pull_count, star_count } = await got(endpoint).json<any>()
+  const { pull_count, star_count } = await requestJson<any>(endpoint)
 
   switch (topic) {
     case 'stars':
@@ -83,16 +83,11 @@ async function sizeHandler ({ scope, name, tag, architecture, variant }: PathArg
   architecture = architecture ? architecture : 'amd64'
   variant = variant ? variant : ''
    
-  const endpoint = `https://hub.docker.com/v2/repositories/${scope}/${name}/tags`
-  let body = await got(endpoint).json<any>()
-
-  let results = [...body.results]
-  while (body.next) {
-    body = await got(body.next).json<any>()
-    results = [...results, ...body.results]
-  }
-
-  const tagData = results.find(tagData => tagData.name === tag)
+  const endpoint = `https://hub.docker.com/v2/namespaces/${encodeURIComponent(scope)}/repositories/${encodeURIComponent(name)}/tags/${encodeURIComponent(tag)}`
+  const tagData = await requestJson<any>(endpoint).catch(error => {
+    if (error instanceof HTTPError && error.status === 404) return undefined
+    throw error
+  })
 
   if (!tagData) {
     return {
@@ -134,17 +129,7 @@ async function sizeHandler ({ scope, name, tag, architecture, variant }: PathArg
 }
 
 async function layersHandler ({ scope, name, tag, architecture, variant }: PathArgs) {
-  tag = tag ? tag : 'latest'
-  architecture = architecture ? architecture : 'amd64'
-  variant = variant ? variant : ''
-
-  const token = (await getDockerAuthToken(scope, name)).token
-
-  const manifest_list = await getManifestList(scope, name, tag, architecture, variant, token)
-
-  const image_manifest = await getImageManifest(scope, name, manifest_list.digest, token)
-
-  const image_config = await getImageConfig(scope, name, image_manifest.config.digest, token)
+  const image_config = await loadDockerImageConfig(scope, name, tag, architecture, variant)
 
   const layers = image_config.history
   if (! layers) {
@@ -163,17 +148,7 @@ async function layersHandler ({ scope, name, tag, architecture, variant }: PathA
 }
 
 async function metadataHandler ({ type, scope, name, tag, architecture, variant }: PathArgs) {
-  tag = tag ? tag : 'latest'
-  architecture = architecture ? architecture : 'amd64'
-  variant = variant ? variant : ''
-
-  const token = (await getDockerAuthToken(scope, name)).token
-
-  const manifest_list = await getManifestList(scope, name, tag, architecture, variant, token)
-
-  const image_manifest = await getImageManifest(scope, name, manifest_list.digest, token)
-
-  const image_config = await getImageConfig(scope, name, image_manifest.config.digest, token)
+  const image_config = await loadDockerImageConfig(scope, name, tag, architecture, variant)
 
   const metadata = image_config.container_config.Labels[`org.label-schema.${type}`] || image_config.container_config.Labels[`org.opencontainers.image.${type}`]
   if (! metadata) {
